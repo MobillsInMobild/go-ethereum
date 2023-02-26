@@ -17,6 +17,8 @@
 package vm
 
 import (
+	"bytes"
+	"fmt"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -233,17 +235,54 @@ func opSAR(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte
 	return nil, nil
 }
 
+// func opKeccak256(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+// 	offset, size := scope.Stack.pop(), scope.Stack.peek()
+// 	data := scope.Memory.GetPtr(int64(offset.Uint64()), int64(size.Uint64()))
+
+// 	if interpreter.hasher == nil {
+// 		interpreter.hasher = crypto.NewKeccakState()
+// 	} else {
+// 		interpreter.hasher.Reset()
+// 	}
+// 	interpreter.hasher.Write(data)
+// 	interpreter.hasher.Read(interpreter.hasherBuf[:])
+
+// 	evm := interpreter.evm
+// 	if evm.Config.EnablePreimageRecording {
+// 		evm.StateDB.AddPreimage(interpreter.hasherBuf, data)
+// 	}
+
+// 	size.SetBytes(interpreter.hasherBuf[:])
+// 	return nil, nil
+// }
+
 func opKeccak256(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	offset, size := scope.Stack.pop(), scope.Stack.peek()
 	data := scope.Memory.GetPtr(int64(offset.Uint64()), int64(size.Uint64()))
 
-	if interpreter.hasher == nil {
-		interpreter.hasher = crypto.NewKeccakState()
-	} else {
-		interpreter.hasher.Reset()
+	// handle strings of the form "AA$BB$CC$DD"
+	segments := bytes.Split(data, []byte("$"))
+	result := make([]string, len(segments))
+	for i, segment := range segments {
+		result[i] = string(segment)
 	}
-	interpreter.hasher.Write(data)
-	interpreter.hasher.Read(interpreter.hasherBuf[:])
+
+	switch result[0] {
+	case "Keccak256":
+		{
+			if interpreter.hasher == nil {
+				interpreter.hasher = crypto.NewKeccakState()
+			} else {
+				interpreter.hasher.Reset()
+			}
+			interpreter.hasher.Write([]byte(result[1]))
+			interpreter.hasher.Read(interpreter.hasherBuf[:])
+		}
+	default:
+		{
+			fmt.Println(segments)
+		}
+	}
 
 	evm := interpreter.evm
 	if evm.Config.EnablePreimageRecording {

@@ -277,10 +277,19 @@ func opKeccak256(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 			}
 			interpreter.hasher.Write([]byte(result[1]))
 			interpreter.hasher.Read(interpreter.hasherBuf[:])
+			break
 		}
 	default:
 		{
 			fmt.Println(segments)
+			if interpreter.hasher == nil {
+				interpreter.hasher = crypto.NewKeccakState()
+			} else {
+				interpreter.hasher.Reset()
+			}
+			interpreter.hasher.Write([]byte(result[0]))
+			interpreter.hasher.Read(interpreter.hasherBuf[:])
+			break
 		}
 	}
 

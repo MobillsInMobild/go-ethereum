@@ -17,13 +17,15 @@
 package vm
 
 import (
+	"bytes"
+	"fmt"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
-	"golang.org/x/crypto/sha3"
 )
 
 func opAdd(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -233,17 +235,63 @@ func opSAR(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte
 	return nil, nil
 }
 
+// func opKeccak256(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+// 	offset, size := scope.Stack.pop(), scope.Stack.peek()
+// 	data := scope.Memory.GetPtr(int64(offset.Uint64()), int64(size.Uint64()))
+
+// 	if interpreter.hasher == nil {
+// 		interpreter.hasher = crypto.NewKeccakState()
+// 	} else {
+// 		interpreter.hasher.Reset()
+// 	}
+// 	interpreter.hasher.Write(data)
+// 	interpreter.hasher.Read(interpreter.hasherBuf[:])
+
+// 	evm := interpreter.evm
+// 	if evm.Config.EnablePreimageRecording {
+// 		evm.StateDB.AddPreimage(interpreter.hasherBuf, data)
+// 	}
+
+// 	size.SetBytes(interpreter.hasherBuf[:])
+// 	return nil, nil
+// }
+
 func opKeccak256(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	offset, size := scope.Stack.pop(), scope.Stack.peek()
 	data := scope.Memory.GetPtr(int64(offset.Uint64()), int64(size.Uint64()))
 
-	if interpreter.hasher == nil {
-		interpreter.hasher = sha3.NewLegacyKeccak256().(keccakState)
-	} else {
-		interpreter.hasher.Reset()
+	// handle strings of the form "AA$BB$CC$DD"
+	segments := bytes.Split(data, []byte("$"))
+	result := make([]string, len(segments))
+	for i, segment := range segments {
+		result[i] = string(segment)
 	}
-	interpreter.hasher.Write(data)
-	interpreter.hasher.Read(interpreter.hasherBuf[:])
+
+	switch result[0] {
+	case "Keccak256":
+		{
+			if interpreter.hasher == nil {
+				interpreter.hasher = crypto.NewKeccakState()
+			} else {
+				interpreter.hasher.Reset()
+			}
+			interpreter.hasher.Write([]byte(result[1]))
+			interpreter.hasher.Read(interpreter.hasherBuf[:])
+			break
+		}
+	default:
+		{
+			fmt.Println(segments)
+			if interpreter.hasher == nil {
+				interpreter.hasher = crypto.NewKeccakState()
+			} else {
+				interpreter.hasher.Reset()
+			}
+			interpreter.hasher.Write([]byte(result[0]))
+			interpreter.hasher.Read(interpreter.hasherBuf[:])
+			break
+		}
+	}
 
 	evm := interpreter.evm
 	if evm.Config.EnablePreimageRecording {
@@ -392,16 +440,21 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 // opExtCodeHash returns the code hash of a specified account.
 // There are several cases when the function is called, while we can relay everything
 // to `state.GetCodeHash` function to ensure the correctness.
-//   (1) Caller tries to get the code hash of a normal contract account, state
+//
+//	(1) Caller tries to get the code hash of a normal contract account, state
+//
 // should return the relative code hash and set it as the result.
 //
-//   (2) Caller tries to get the code hash of a non-existent account, state should
+//	(2) Caller tries to get the code hash of a non-existent account, state should
+//
 // return common.Hash{} and zero will be set as the result.
 //
-//   (3) Caller tries to get the code hash for an account without contract code,
+//	(3) Caller tries to get the code hash for an account without contract code,
+//
 // state should return emptyCodeHash(0xc5d246...) as the result.
 //
-//   (4) Caller tries to get the code hash of a precompiled account, the result
+//	(4) Caller tries to get the code hash of a precompiled account, the result
+//
 // should be zero or emptyCodeHash.
 //
 // It is worth noting that in order to avoid unnecessary create and clean,
@@ -410,10 +463,12 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 // If the precompile account is not transferred any amount on a private or
 // customized chain, the return value will be zero.
 //
-//   (5) Caller tries to get the code hash for an account which is marked as suicided
+//	(5) Caller tries to get the code hash for an account which is marked as suicided
+//
 // in the current transaction, the code hash of this account should be returned.
 //
-//   (6) Caller tries to get the code hash for an account which is marked as deleted,
+//	(6) Caller tries to get the code hash for an account which is marked as deleted,
+//
 // this account should be regarded as a non-existent account and zero should be returned.
 func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	slot := scope.Stack.peek()
